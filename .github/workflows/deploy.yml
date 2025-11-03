@@ -41,7 +41,7 @@ jobs:
         with:
           audience: sts.amazonaws.com
           aws-region: ${{ env.AWS_REGION }}
-          role-to-assume: arn:aws:iam::934484537298:role/crud-api
+          role-to-assume: arn:aws:iam::575327645493:role/crud-api-new
 
       # ---------- SECURITY GROUP ----------
       - name: Check if Security Group Exists
