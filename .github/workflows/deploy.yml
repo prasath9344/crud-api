@@ -13,7 +13,7 @@ permissions:
 
 env:
   AWS_REGION: us-east-1
-  ECR_REPOSITORY: crud
+  ECR_REPOSITORY: crud-api
   CONTAINER_NAME: crud-api
   INSTANCE_TYPE: t2.micro
   AMI_ID: ami-0c398cb65a93047f2
