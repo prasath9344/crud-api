@@ -47,7 +47,7 @@ jobs:
       - name: Get security group id
         run: |
           SECURITY_GROUP_ID=$(aws ec2 describe-security-groups \
-              --group-names my-sg \
+              --group-names ${{env.SECURITY_GROUP_NAME}} \
               --query 'SecurityGroups[0].GroupId' \
               --output text)
           echo "Security Group ID is $SECURITY_GROUP_ID"
