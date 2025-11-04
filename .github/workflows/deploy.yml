@@ -35,14 +35,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Check AWS CLI
-        run: 
+      - name: Install dependencies
+        run: |
           sudo apt-get update -y
-          sudo apt-get install -y unzip curl
+          sudo apt-get install -y jq
+      # Remove any line that installs awscli here!
+
+      # If you need a newer AWS CLI version for specific features:
+      - name: Update AWS CLI (optional)
+        run: |
           curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-          unzip -o awscliv2.zip
+          unzip awscliv2.zip
           sudo ./aws/install --update
-          aws --version
+
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
