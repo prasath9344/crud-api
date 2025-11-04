@@ -138,8 +138,7 @@ jobs:
           aws ec2 associate-address --instance-id ${{ env.instance_id }} --allocation-id ${{ env.EIP_ALLOCATION_ID }} || true
 
             - name: Checkout code
-        uses: actions/checkout@v4
-
+        
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
