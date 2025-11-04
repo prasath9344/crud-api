@@ -144,10 +144,9 @@ jobs:
       - name: Associate Elastic IP (optional)
         if: env.EIP_ALLOCATION_ID != ''
         run: |
-          aws ec2 associate-address --instance-id ${{ env.instance_id }} --allocation-id ${{ env.EIP_ALLOCATION_ID }} || true
+         set -e
+         aws ec2 associate-address --instance-id i-099e6f3e0fbdfa0ae --allocation-id eipalloc-093a6205a5a73e4d4 || true
 
-            - name: Checkout code
-        
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
