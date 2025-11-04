@@ -40,8 +40,8 @@ jobs:
         with:
           audience: sts.amazonaws.com
           aws-region: ${{ env.AWS_REGION }}
-          role-to-assume: arn:aws:iam::575327645493:role/${{ env.ECR_ROLE_NAME }}
-
+          role-to-assume: arn:aws:iam::575327645493:role/crud-api-dep 
+          
       - name: Get security group id (safe)
         id: sg
         run: |
