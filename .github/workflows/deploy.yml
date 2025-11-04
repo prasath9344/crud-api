@@ -38,7 +38,9 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y jq awscli
+          sudo apt-get install -y python3-pip
+          pip install awscli --upgrade --user
+          export PATH=$PATH:~/.local/bin
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
