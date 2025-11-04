@@ -34,27 +34,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      
-      - name: Ensure AWS CLI v2 is available
-        run: |
-          if ! command -v aws &> /dev/null
-          then
-            echo "AWS CLI not found. Installing..."
-            sudo apt-get update -y
-            sudo apt-get install -y unzip curl
-            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-            unzip -o awscliv2.zip
-            sudo ./aws/install
-          else
-            echo "AWS CLI already exists. Updating..."
-            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-            unzip -o awscliv2.zip
-            sudo ./aws/install --update
-          fi
-
-          aws --version
-
           
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
