@@ -169,12 +169,13 @@ jobs:
           PUBLIC_IP=${{ env.public_ip }}
 
           # Prepare remote commands in a heredoc (variables expanded locally where desired)
-          ssh -o StrictHostKeyChecking=no -i private_key.pem ubuntu@${PUBLIC_IP} <<'REMOTE'
-#!/bin/bash
-set -e
-# ensure package lists updated
-sudo apt-get update -y
-sudo apt-get install -y gnupg ca-certificates curl unzip lsb-release nginx certbot python3-certbot-nginx awscli
+          ssh -o StrictHostKeyChecking=no -i private_key.pem ubuntu@${PUBLIC_IP} <<'EOF'
+
+          set -e
+
+
+          sudo apt-get update -y
+          sudo apt-get install -y nginx docker.io
 
 # install docker
 curl -fsSL https://get.docker.com -o get-docker.sh
