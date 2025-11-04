@@ -144,7 +144,7 @@ jobs:
       - name: Associate Elastic IP (optional)
         if: env.EIP_ALLOCATION_ID != ''
         run: |
-         set -e
+        
          aws ec2 associate-address --instance-id i-099e6f3e0fbdfa0ae --allocation-id eipalloc-093a6205a5a73e4d4 || true
 
       - name: Login to Amazon ECR
