@@ -137,11 +137,14 @@ jobs:
         run: |
           aws ec2 associate-address --instance-id ${{ env.instance_id }} --allocation-id ${{ env.EIP_ALLOCATION_ID }} || true
 
+            - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build, tag, and push image
+      - name: Build, tag, and push Docker image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           IMAGE_TAG: ${{ github.sha }}
@@ -154,14 +157,14 @@ jobs:
           echo "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > private_key.pem
           chmod 600 private_key.pem
 
-      - name: Remote setup - install Docker, nginx, certbot and create app service
+      - name: Remote setup - Install, configure and deploy
         env:
           IMAGE_TAG: ${{ github.sha }}
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           AWS_REGION: ${{ env.AWS_REGION }}
         run: |
           PUBLIC_IP=${{ env.public_ip }}
-          ssh -o StrictHostKeyChecking=no -i private_key.pem ubuntu@${PUBLIC_IP} '
+          ssh -o StrictHostKeyChecking=no -i private_key.pem ubuntu@${PUBLIC_IP} << 'EOF'
             set -e
             sudo apt-get update -y
             sudo apt-get install -y nginx docker.io jq awscli certbot python3-certbot-nginx
@@ -169,11 +172,13 @@ jobs:
             sudo sh get-docker.sh
             sudo usermod -aG docker ubuntu
             sudo systemctl enable docker --now || true
-            sudo aws ecr get-login-password --region '"$AWS_REGION"' | sudo docker login --username AWS --password-stdin '"$ECR_REGISTRY"'
-            sudo docker pull '"$ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG"'
+
+            sudo aws ecr get-login-password --region '${{ env.AWS_REGION }}' | sudo docker login --username AWS --password-stdin '${{ steps.login-ecr.outputs.registry }}'
+            sudo docker pull '${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}'
             echo -e "DB_USER=${{ secrets.DB_USER }}\nDB_HOST=${{ secrets.DB_HOST }}\nDB_NAME=${{ secrets.DB_NAME }}\nDB_PASSWORD=${{ secrets.DB_PASSWORD }}" | sudo tee /home/ubuntu/.env
             sudo chown ubuntu:ubuntu /home/ubuntu/.env
-            sudo bash -c '\''cat > /etc/systemd/system/${{ env.CONTAINER_NAME }}.service <<EOF
+
+            sudo bash -c 'cat > /etc/systemd/system/${{ env.CONTAINER_NAME }}.service <<SERVICE
 [Unit]
 Description=Crud Container
 After=network.target docker.service
@@ -182,13 +187,16 @@ Requires=docker.service
 Restart=always
 ExecStartPre=-/usr/bin/docker stop crud-api
 ExecStartPre=-/usr/bin/docker rm crud-api
-ExecStart=/usr/bin/docker run --name crud-api --env-file /home/ubuntu/.env -p 5000:5000 ECR_URL:TAG
+ExecStart=/usr/bin/docker run --name crud-api --env-file /home/ubuntu/.env -p 5000:5000 ${ECR_REGISTRY}/${{ env.ECR_REPOSITORY }}:${IMAGE_TAG}
 ExecStop=/usr/bin/docker stop crud-api
 [Install]
 WantedBy=multi-user.target
 SERVICE'
-            # Write nginx config
-            sudo bash -c 'cat > /etc/nginx/sites-available/crud-api <<NGCONF
+            sudo systemctl daemon-reload
+            sudo systemctl enable ${CONTAINER_NAME}
+            sudo systemctl restart ${CONTAINER_NAME}
+
+            sudo bash -c 'cat > /etc/nginx/sites-available/${CONTAINER_NAME} <<NGCONF
 server {
     listen 80;
     server_name prasathcrudapi.live;
@@ -201,28 +209,11 @@ server {
     }
 }
 NGCONF'
-EOF
-            sudo systemctl daemon-reload
-            sudo systemctl enable ${{ env.CONTAINER_NAME }}
-            sudo systemctl restart ${{ env.CONTAINER_NAME }}
-            sudo bash -c '\''cat > /etc/nginx/sites-available/${{ env.CONTAINER_NAME }} <<EOF
-server {
-    listen 80;
-    server_name prasathcrudapi.live;
-    location / {
-        proxy_pass http://localhost:5000;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-    }
-}
-EOF'\''
             sudo rm -f /etc/nginx/sites-enabled/default || true
-            sudo ln -sf /etc/nginx/sites-available/${{ env.CONTAINER_NAME }} /etc/nginx/sites-enabled/
+            sudo ln -sf /etc/nginx/sites-available/${CONTAINER_NAME} /etc/nginx/sites-enabled/
             sudo nginx -t && sudo systemctl restart nginx
             sudo certbot --nginx -d prasathcrudapi.live --non-interactive --agree-tos -m praveen.work.cyber@gmail.com || true
-          '
+EOF
 
       - name: Cleanup
         run: |
@@ -232,23 +223,3 @@ EOF'\''
         run: |
           echo "Deployment attempted. Check the EC2 instance logs and systemd service status for ${{ env.CONTAINER_NAME }} on the instance:"
           echo "ssh -i <your-key> ubuntu@${{ env.public_ip }}"
-
-```
-
-**Key Points to Check:**
-- Ensure all referenced secrets (`EC2_SSH_PRIVATE_KEY`, `DB_USER`, `DB_HOST`, `DB_NAME`, `DB_PASSWORD`) are set in your repo.
-- Make sure your EC2 instance AMI supports Docker and SSH as Ubuntu (official) does by default.
-- Double-check the IAM permissions allow ECR Pull for the EC2 instance.
-
-This YAML implements best practices, variable isolation, and robust error handling as recommended in guides.[2][3][1]
-
-[1](https://github.com/Raghul-M/Docker_Github-Actions_AWS-App/)
-[2](https://dev.to/s3cloudhub/automate-docker-deployments-push-your-images-to-ec2-with-github-actions-3a3j)
-[3](https://dev.to/aws-builders/automate-docker-deployments-to-your-server-using-github-actions-and-amazon-ecr-332d)
-[4](https://www.reddit.com/r/aws/comments/1dzlofr/best_practice_to_deploy_docker_containers_in_ec2/)
-[5](https://github.com/marketplace/actions/deploy-docker-to-aws-ec2)
-[6](https://www.youtube.com/watch?v=OjRevvZvWX4)
-[7](https://www.reddit.com/r/django/comments/pidt11/stepbystep_guide_for_startups_to_continuous/)
-[8](https://lightrains.com/blogs/deploy-aws-ec2-using-github-actions/)
-[9](https://stackoverflow.com/questions/78645750/ci-cd-github-action-workflow-is-failing-to-ssh-to-my-aws-ec2-instance)
-[10](https://lightrains.com/blogs/deploy-aws-ec2-using-github-actions)
