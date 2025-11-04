@@ -182,47 +182,52 @@ jobs:
 
       - name: Setup and Configure Services
         run: |
-          sudo bash -c 'cat > /etc/systemd/system/${{ env.CONTAINER_NAME }}.service <<SERVICE
-          [Unit]
-           Description=Crud Container
-           After=network.target docker.service
-           Requires=docker.service
+          sudo aws ecr get-login-password --region '${{ env.AWS_REGION }}' | sudo docker login --username AWS --password-stdin '${{ steps.login-ecr.outputs.registry }}'
+          sudo docker pull '${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}'
+          echo -e "DB_USER=${{ secrets.DB_USER }}\nDB_HOST=${{ secrets.DB_HOST }}\nDB_NAME=${{ secrets.DB_NAME }}\nDB_PASSWORD=${{ secrets.DB_PASSWORD }}" | sudo tee /home/ubuntu/.env
+          sudo chown ubuntu:ubuntu /home/ubuntu/.env
 
-          [Service]
-          Restart=always
-          ExecStartPre=-/usr/bin/docker stop crud-api
-          ExecStartPre=-/usr/bin/docker rm crud-api
-          ExecStart=/usr/bin/docker run --name crud-api --env-file /home/ubuntu/.env -p 5000:5000 ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${IMAGE_TAG}
-          ExecStop=/usr/bin/docker stop crud-api
+        # Create systemd service
+        sudo bash -c "cat > /etc/systemd/system/${{ env.CONTAINER_NAME }}.service <<'SERVICE'
+        [Unit]
+        Description=Crud Container
+        After=network.target docker.service
+        Requires=docker.service
 
-          [Install]
-          WantedBy=multi-user.target
-          SERVICE'
+        [Service]
+        Restart=always
+        ExecStartPre=-/usr/bin/docker stop crud-api
+        ExecStartPre=-/usr/bin/docker rm crud-api
+        ExecStart=/usr/bin/docker run --name crud-api --env-file /home/ubuntu/.env -p 5000:5000 ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+        ExecStop=/usr/bin/docker stop crud-api
 
-          sudo systemctl daemon-reload
-          sudo systemctl enable ${{ env.CONTAINER_NAME }}
-          sudo systemctl restart ${{ env.CONTAINER_NAME }}
+        [Install]
+        WantedBy=multi-user.target
+        SERVICE"
 
-          sudo bash -c 'cat > /etc/nginx/sites-available/${{ env.CONTAINER_NAME }} <<NGCONF
-          server {
-             listen 80;
-              server_name prasathcrudapi.live;
+        sudo systemctl daemon-reload
+        sudo systemctl enable ${{ env.CONTAINER_NAME }}
+        sudo systemctl restart ${{ env.CONTAINER_NAME }}
 
-          location / {
-              proxy_pass http://localhost:5000;
-              proxy_set_header Host $host;
-              proxy_set_header X-Real-IP $remote_addr;
-              proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-              proxy_set_header X-Forwarded-Proto $scheme;
-          }
-          }
-          NGCONF'
+        # Create Nginx config
+        sudo bash -c "cat > /etc/nginx/sites-available/${{ env.CONTAINER_NAME }} <<'NGCONF'
+        server {
+        listen 80;
+        server_name prasathcrudapi.live;
 
-          sudo rm -f /etc/nginx/sites-enabled/default || true
-          sudo ln -sf /etc/nginx/sites-available/${{ env.CONTAINER_NAME }} /etc/nginx/sites-enabled/
-          sudo nginx -t && sudo systemctl restart nginx
+        location / {
+            proxy_pass http://localhost:5000;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+    }
+    NGCONF"
 
-        # Request Let's Encrypt SSL Certificate
-            sudo certbot --nginx -d prepyapi.adraproductstudio.com --non-interactive --agree-tos -m engineering@adraproductstudio.com
+    sudo rm -f /etc/nginx/sites-enabled/default || true
+    sudo ln -sf /etc/nginx/sites-available/${{ env.CONTAINER_NAME }} /etc/nginx/sites-enabled/
+    sudo nginx -t && sudo systemctl restart nginx
 
-# Auto-renewal (already set by Certbot via cron or systemd)
+    # Request Let's Encrypt SSL Certificate
+    sudo certbot --nginx -d prasathcrudapi.live --non-interactive --agree-tos -m engineering@adraproductstudio.com
