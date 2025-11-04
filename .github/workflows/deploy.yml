@@ -187,47 +187,47 @@ jobs:
           echo -e "DB_USER=${{ secrets.DB_USER }}\nDB_HOST=${{ secrets.DB_HOST }}\nDB_NAME=${{ secrets.DB_NAME }}\nDB_PASSWORD=${{ secrets.DB_PASSWORD }}" | sudo tee /home/ubuntu/.env
           sudo chown ubuntu:ubuntu /home/ubuntu/.env
 
-        # Create systemd service
-        sudo bash -c "cat > /etc/systemd/system/${{ env.CONTAINER_NAME }}.service <<'SERVICE'
-        [Unit]
-        Description=Crud Container
-        After=network.target docker.service
-        Requires=docker.service
+          # Create systemd service
+          sudo bash -c "cat > /etc/systemd/system/${{ env.CONTAINER_NAME }}.service <<'SERVICE'
+          [Unit]
+          Description=Crud Container
+          After=network.target docker.service
+          Requires=docker.service
 
-        [Service]
-        Restart=always
-        ExecStartPre=-/usr/bin/docker stop crud-api
-        ExecStartPre=-/usr/bin/docker rm crud-api
-        ExecStart=/usr/bin/docker run --name crud-api --env-file /home/ubuntu/.env -p 5000:5000 ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
-        ExecStop=/usr/bin/docker stop crud-api
+          [Service]
+          Restart=always
+          ExecStartPre=-/usr/bin/docker stop crud-api
+          ExecStartPre=-/usr/bin/docker rm crud-api
+          ExecStart=/usr/bin/docker run --name crud-api --env-file /home/ubuntu/.env -p 5000:5000 ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+          ExecStop=/usr/bin/docker stop crud-api
 
-        [Install]
-        WantedBy=multi-user.target
-        SERVICE"
+          [Install]
+          WantedBy=multi-user.target
+          SERVICE"
 
-        sudo systemctl daemon-reload
-        sudo systemctl enable ${{ env.CONTAINER_NAME }}
-        sudo systemctl restart ${{ env.CONTAINER_NAME }}
+          sudo systemctl daemon-reload
+          sudo systemctl enable ${{ env.CONTAINER_NAME }}
+          sudo systemctl restart ${{ env.CONTAINER_NAME }}
 
-        # Create Nginx config
-        sudo bash -c "cat > /etc/nginx/sites-available/${{ env.CONTAINER_NAME }} <<'NGCONF'
-        server {
-        listen 80;
-        server_name prasathcrudapi.live;
+          # Create Nginx config
+          sudo bash -c "cat > /etc/nginx/sites-available/${{ env.CONTAINER_NAME }} <<'NGCONF'
+          server {
+          listen 80;
+          server_name prasathcrudapi.live;
 
-        location / {
-            proxy_pass http://localhost:5000;
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
-        }
-    }
-    NGCONF"
+          location / {
+              proxy_pass http://localhost:5000;
+              proxy_set_header Host $host;
+              proxy_set_header X-Real-IP $remote_addr;
+              proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+              proxy_set_header X-Forwarded-Proto $scheme;
+          }
+          }
+          NGCONF"
 
-    sudo rm -f /etc/nginx/sites-enabled/default || true
-    sudo ln -sf /etc/nginx/sites-available/${{ env.CONTAINER_NAME }} /etc/nginx/sites-enabled/
-    sudo nginx -t && sudo systemctl restart nginx
+          sudo rm -f /etc/nginx/sites-enabled/default || true
+          sudo ln -sf /etc/nginx/sites-available/${{ env.CONTAINER_NAME }} /etc/nginx/sites-enabled/
+          sudo nginx -t && sudo systemctl restart nginx
 
-    # Request Let's Encrypt SSL Certificate
-    sudo certbot --nginx -d prasathcrudapi.live --non-interactive --agree-tos -m engineering@adraproductstudio.com
+          # Request Let's Encrypt SSL Certificate
+          sudo certbot --nginx -d prasathcrudapi.live --non-interactive --agree-tos -m engineering@adraproductstudio.com
