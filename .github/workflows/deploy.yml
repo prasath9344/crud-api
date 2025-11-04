@@ -1,13 +1,4 @@
-To deploy your Python Docker app to an EC2 instance using GitHub Actions, your workflow is quite comprehensive and follows most best practices, but a few corrections and improvements can help ensure greater reliability and security:
 
-- Your base structure and ordering are correct.
-- Make sure all GitHub secrets are set for DB and SSH key values.
-- Ensure the correct permissions are granted to the IAM role attached to EC2 for ECR pull and SSM (if you plan to use it).
-- Key improvements are related to SSH key permissions, remote variable expansion, and robust handling of cloud-init for EC2 instances.
-
-Below is a corrected and slightly improved workflow YAML, based on common references and best-practice guides:[1][2][3]
-
-```yaml
 name: Deploy PrepyAI-API Docker App to AWS EC2
 
 on:
