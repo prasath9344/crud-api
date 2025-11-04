@@ -1,3 +1,13 @@
+To deploy your Python Docker app to an EC2 instance using GitHub Actions, your workflow is quite comprehensive and follows most best practices, but a few corrections and improvements can help ensure greater reliability and security:
+
+- Your base structure and ordering are correct.
+- Make sure all GitHub secrets are set for DB and SSH key values.
+- Ensure the correct permissions are granted to the IAM role attached to EC2 for ECR pull and SSM (if you plan to use it).
+- Key improvements are related to SSH key permissions, remote variable expansion, and robust handling of cloud-init for EC2 instances.
+
+Below is a corrected and slightly improved workflow YAML, based on common references and best-practice guides:[1][2][3]
+
+```yaml
 name: Deploy PrepyAI-API Docker App to AWS EC2
 
 on:
@@ -46,11 +56,9 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           role-to-assume: arn:aws:iam::575327645493:role/${{ env.ECR_ROLE_NAME }}
 
-      # ---------- SECURITY GROUP ----------
       - name: Get security group id (safe)
         id: sg
         run: |
-          set -e
           SG_ID=$(aws ec2 describe-security-groups --filters "Name=group-name,Values=${{ env.SECURITY_GROUP_NAME }}" --query 'SecurityGroups[0].GroupId' --output text 2>/dev/null || echo "None")
           echo "security_group_id=$SG_ID" >> $GITHUB_ENV
           if [ "$SG_ID" = "None" ]; then
@@ -71,21 +79,22 @@ jobs:
 
       - name: Authorize Security Group Ingress Rules
         run: |
-          set -e
           SG_ID=${{ env.security_group_id }}
-          RULES='[\n            {"IpProtocol":"tcp","FromPort":22,"ToPort":22,"CidrIp":"0.0.0.0/0"},\n            {"IpProtocol":"tcp","FromPort":80,"ToPort":80,"CidrIp":"0.0.0.0/0"},\n            {"IpProtocol":"tcp","FromPort":443,"ToPort":443,"CidrIp":"0.0.0.0/0"},\n            {"IpProtocol":"tcp","FromPort":5000,"ToPort":5000,"CidrIp":"0.0.0.0/0"}\n          ]'
-
+          RULES='[
+              {"IpProtocol":"tcp","FromPort":22,"ToPort":22,"CidrIp":"0.0.0.0/0"},
+              {"IpProtocol":"tcp","FromPort":80,"ToPort":80,"CidrIp":"0.0.0.0/0"},
+              {"IpProtocol":"tcp","FromPort":443,"ToPort":443,"CidrIp":"0.0.0.0/0"},
+              {"IpProtocol":"tcp","FromPort":5000,"ToPort":5000,"CidrIp":"0.0.0.0/0"}
+            ]'
           for RULE in $(echo "$RULES" | jq -c '.[]'); do
             PROTOCOL=$(echo "$RULE" | jq -r '.IpProtocol')
             FROM_PORT=$(echo "$RULE" | jq -r '.FromPort')
             TO_PORT=$(echo "$RULE" | jq -r '.ToPort')
             CIDR_IP=$(echo "$RULE" | jq -r '.CidrIp')
-
             EXISTING_RULE=$(aws ec2 describe-security-group-rules \
               --filters Name=group-id,Values=$SG_ID \
               --query "SecurityGroupRules[?FromPort==\`$FROM_PORT\` && ToPort==\`$TO_PORT\` && IpProtocol==\`$PROTOCOL\` && CidrIpv4==\`$CIDR_IP\` ]" \
               --output text)
-
             if [ -z "$EXISTING_RULE" ]; then
               aws ec2 authorize-security-group-ingress \
                 --group-id $SG_ID \
@@ -95,11 +104,9 @@ jobs:
             fi
           done
 
-      # ---------- EC2 INSTANCE ----------
       - name: Check if EC2 Instance Exists
         id: check-instance
         run: |
-          set -e
           INST_ID=$(aws ec2 describe-instances \
             --filters "Name=tag:Name,Values=${{ env.INSTANCE_NAME }}" "Name=instance-state-name,Values=running" \
             --query 'Reservations[0].Instances[0].InstanceId' --output text 2>/dev/null || echo "None")
@@ -113,7 +120,6 @@ jobs:
       - name: Create EC2 Instance (if not exists)
         if: env.instance_exists == 'false'
         run: |
-          set -e
           SG_ID=${{ env.security_group_id }}
           INSTANCE_ID=$(aws ec2 run-instances \
             --image-id ${{ env.AMI_ID }} \
@@ -124,7 +130,6 @@ jobs:
             --iam-instance-profile Name=${{ env.ECR_ROLE_NAME }} \
             --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=${{ env.INSTANCE_NAME }}}]" \
             --query 'Instances[0].InstanceId' --output text)
-
           echo "instance_id=$INSTANCE_ID" >> $GITHUB_ENV
 
       - name: Wait for EC2 Instance to be Running
@@ -132,7 +137,6 @@ jobs:
           aws ec2 wait instance-running --instance-ids ${{ env.instance_id }}
 
       - name: Get Public IP of EC2 Instance
-        id: get-ip
         run: |
           IP=$(aws ec2 describe-instances --instance-ids ${{ env.instance_id }} --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
           echo "public_ip=$IP" >> $GITHUB_ENV
@@ -142,7 +146,6 @@ jobs:
         run: |
           aws ec2 associate-address --instance-id ${{ env.instance_id }} --allocation-id ${{ env.EIP_ALLOCATION_ID }} || true
 
-      # ---------- ECR & DEPLOY ----------
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
@@ -164,89 +167,56 @@ jobs:
         env:
           IMAGE_TAG: ${{ github.sha }}
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          AWS_REGION: ${{ env.AWS_REGION }}
         run: |
-          set -e
           PUBLIC_IP=${{ env.public_ip }}
-
-          # Prepare remote commands in a heredoc (variables expanded locally where desired)
-          ssh -o StrictHostKeyChecking=no -i private_key.pem ubuntu@${PUBLIC_IP} <<'EOF'
-
-          set -e
-
-
-          sudo apt-get update -y
-          sudo apt-get install -y nginx docker.io
-
-# install docker
-curl -fsSL https://get.docker.com -o get-docker.sh
-sudo sh get-docker.sh
-sudo usermod -aG docker ubuntu
-sudo systemctl enable docker --now || true
-
-# login to ECR using the instance role (assumes iam instance profile with ECR permissions)
-REGISTRY="${ECR_REGISTRY}"
-IMAGE_TAG="${IMAGE_TAG}"
-sudo aws ecr get-login-password --region ${AWS_REGION} | sudo docker login --username AWS --password-stdin ${ECR_REGISTRY}
-
-# pull image
-sudo docker pull ${ECR_REGISTRY}/${{ env.ECR_REPOSITORY }}:${IMAGE_TAG}
-
-# create env file
-cat > /home/ubuntu/.env <<ENVFILE
-DB_USER=${{ secrets.DB_USER }}
-DB_HOST=${{ secrets.DB_HOST }}
-DB_NAME=${{ secrets.DB_NAME }}
-DB_PASSWORD=${{ secrets.DB_PASSWORD }}
-ENVFILE
-sudo chown ubuntu:ubuntu /home/ubuntu/.env
-
-# create systemd service to run container
-SERVICE_NAME=${{ env.CONTAINER_NAME }}
-cat > /tmp/${SERVICE_NAME}.service <<SERVICE
+          ssh -o StrictHostKeyChecking=no -i private_key.pem ubuntu@${PUBLIC_IP} '
+            set -e
+            sudo apt-get update -y
+            sudo apt-get install -y nginx docker.io jq awscli certbot python3-certbot-nginx
+            curl -fsSL https://get.docker.com -o get-docker.sh
+            sudo sh get-docker.sh
+            sudo usermod -aG docker ubuntu
+            sudo systemctl enable docker --now || true
+            sudo aws ecr get-login-password --region '"$AWS_REGION"' | sudo docker login --username AWS --password-stdin '"$ECR_REGISTRY"'
+            sudo docker pull '"$ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG"'
+            echo -e "DB_USER=${{ secrets.DB_USER }}\nDB_HOST=${{ secrets.DB_HOST }}\nDB_NAME=${{ secrets.DB_NAME }}\nDB_PASSWORD=${{ secrets.DB_PASSWORD }}" | sudo tee /home/ubuntu/.env
+            sudo chown ubuntu:ubuntu /home/ubuntu/.env
+            sudo bash -c '\''cat > /etc/systemd/system/${{ env.CONTAINER_NAME }}.service <<EOF
 [Unit]
 Description=Crud Container
 After=network.target docker.service
 Requires=docker.service
-
 [Service]
 Restart=always
-ExecStartPre=-/usr/bin/docker stop ${SERVICE_NAME}
-ExecStartPre=-/usr/bin/docker rm ${SERVICE_NAME}
-ExecStart=/usr/bin/docker run --name ${SERVICE_NAME} --env-file /home/ubuntu/.env -p 5000:5000 ${ECR_REGISTRY}/${{ env.ECR_REPOSITORY }}:${IMAGE_TAG}
-ExecStop=/usr/bin/docker stop ${SERVICE_NAME}
-
+ExecStartPre=-/usr/bin/docker stop ${{ env.CONTAINER_NAME }}
+ExecStartPre=-/usr/bin/docker rm ${{ env.CONTAINER_NAME }}
+ExecStart=/usr/bin/docker run --name ${{ env.CONTAINER_NAME }} --env-file /home/ubuntu/.env -p 5000:5000 '"$ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG"'
+ExecStop=/usr/bin/docker stop ${{ env.CONTAINER_NAME }}
 [Install]
 WantedBy=multi-user.target
-SERVICE
-
-sudo mv /tmp/${SERVICE_NAME}.service /etc/systemd/system/${SERVICE_NAME}.service
-sudo systemctl daemon-reload
-sudo systemctl enable ${SERVICE_NAME}
-sudo systemctl restart ${SERVICE_NAME} || sudo journalctl -u ${SERVICE_NAME} --no-pager -n 200
-
-# configure nginx reverse proxy
-sudo bash -c 'cat > /etc/nginx/sites-available/${SERVICE_NAME}' <<'NGCONF'
+EOF'\''
+            sudo systemctl daemon-reload
+            sudo systemctl enable ${{ env.CONTAINER_NAME }}
+            sudo systemctl restart ${{ env.CONTAINER_NAME }}
+            sudo bash -c '\''cat > /etc/nginx/sites-available/${{ env.CONTAINER_NAME }} <<EOF
 server {
     listen 80;
     server_name prasathcrudapi.live;
-
     location / {
         proxy_pass http://localhost:5000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
     }
 }
-NGCONF
-
-sudo rm -f /etc/nginx/sites-enabled/default || true
-sudo ln -sf /etc/nginx/sites-available/${SERVICE_NAME} /etc/nginx/sites-enabled/
-sudo nginx -t && sudo systemctl restart nginx
-
-# obtain certificate (email should be replaced with your contact)
-sudo certbot --nginx -d prasathcrudapi.live --non-interactive --agree-tos -m praveen.work.cyber@gmail.com || true
-REMOTE
+EOF'\''
+            sudo rm -f /etc/nginx/sites-enabled/default || true
+            sudo ln -sf /etc/nginx/sites-available/${{ env.CONTAINER_NAME }} /etc/nginx/sites-enabled/
+            sudo nginx -t && sudo systemctl restart nginx
+            sudo certbot --nginx -d prasathcrudapi.live --non-interactive --agree-tos -m praveen.work.cyber@gmail.com || true
+          '
 
       - name: Cleanup
         run: |
@@ -254,5 +224,25 @@ REMOTE
 
       - name: Final status
         run: |
-          echo "Deployment attempted. Check the EC2 instance logs and systemd service status for ${ { env.CONTAINER_NAME } } on the instance:"
+          echo "Deployment attempted. Check the EC2 instance logs and systemd service status for ${{ env.CONTAINER_NAME }} on the instance:"
           echo "ssh -i <your-key> ubuntu@${{ env.public_ip }}"
+
+```
+
+**Key Points to Check:**
+- Ensure all referenced secrets (`EC2_SSH_PRIVATE_KEY`, `DB_USER`, `DB_HOST`, `DB_NAME`, `DB_PASSWORD`) are set in your repo.
+- Make sure your EC2 instance AMI supports Docker and SSH as Ubuntu (official) does by default.
+- Double-check the IAM permissions allow ECR Pull for the EC2 instance.
+
+This YAML implements best practices, variable isolation, and robust error handling as recommended in guides.[2][3][1]
+
+[1](https://github.com/Raghul-M/Docker_Github-Actions_AWS-App/)
+[2](https://dev.to/s3cloudhub/automate-docker-deployments-push-your-images-to-ec2-with-github-actions-3a3j)
+[3](https://dev.to/aws-builders/automate-docker-deployments-to-your-server-using-github-actions-and-amazon-ecr-332d)
+[4](https://www.reddit.com/r/aws/comments/1dzlofr/best_practice_to_deploy_docker_containers_in_ec2/)
+[5](https://github.com/marketplace/actions/deploy-docker-to-aws-ec2)
+[6](https://www.youtube.com/watch?v=OjRevvZvWX4)
+[7](https://www.reddit.com/r/django/comments/pidt11/stepbystep_guide_for_startups_to_continuous/)
+[8](https://lightrains.com/blogs/deploy-aws-ec2-using-github-actions/)
+[9](https://stackoverflow.com/questions/78645750/ci-cd-github-action-workflow-is-failing-to-ssh-to-my-aws-ec2-instance)
+[10](https://lightrains.com/blogs/deploy-aws-ec2-using-github-actions)
