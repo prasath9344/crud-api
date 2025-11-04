@@ -179,47 +179,50 @@ jobs:
             sudo chown ubuntu:ubuntu /home/ubuntu/.env
 
             sudo bash -c 'cat > /etc/systemd/system/${{ env.CONTAINER_NAME }}.service <<SERVICE
-[Unit]
-Description=Crud Container
-After=network.target docker.service
-Requires=docker.service
-[Service]
-Restart=always
-ExecStartPre=-/usr/bin/docker stop crud-api
-ExecStartPre=-/usr/bin/docker rm crud-api
-ExecStart=/usr/bin/docker run --name crud-api --env-file /home/ubuntu/.env -p 5000:5000 ${ECR_REGISTRY}/${{ env.ECR_REPOSITORY }}:${IMAGE_TAG}
-ExecStop=/usr/bin/docker stop crud-api
-[Install]
-WantedBy=multi-user.target
-SERVICE'
-            sudo systemctl daemon-reload
-            sudo systemctl enable ${CONTAINER_NAME}
-            sudo systemctl restart ${CONTAINER_NAME}
 
-            sudo bash -c 'cat > /etc/nginx/sites-available/${CONTAINER_NAME} <<NGCONF
-server {
-    listen 80;
-    server_name prasathcrudapi.live;
-    location / {
-        proxy_pass http://localhost:5000;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-    }
-}
-NGCONF'
-            sudo rm -f /etc/nginx/sites-enabled/default || true
-            sudo ln -sf /etc/nginx/sites-available/${CONTAINER_NAME} /etc/nginx/sites-enabled/
-            sudo nginx -t && sudo systemctl restart nginx
-            sudo certbot --nginx -d prasathcrudapi.live --non-interactive --agree-tos -m praveen.work.cyber@gmail.com || true
-EOF
-
-      - name: Cleanup
+      - name: Setup and Configure Services
         run: |
-          rm -f private_key.pem
+          sudo bash -c 'cat > /etc/systemd/system/${{ env.CONTAINER_NAME }}.service <<SERVICE
+          [Unit]
+           Description=Crud Container
+           After=network.target docker.service
+           Requires=docker.service
 
-      - name: Final status
-        run: |
-          echo "Deployment attempted. Check the EC2 instance logs and systemd service status for ${{ env.CONTAINER_NAME }} on the instance:"
-          echo "ssh -i <your-key> ubuntu@${{ env.public_ip }}"
+          [Service]
+          Restart=always
+          ExecStartPre=-/usr/bin/docker stop crud-api
+          ExecStartPre=-/usr/bin/docker rm crud-api
+          ExecStart=/usr/bin/docker run --name crud-api --env-file /home/ubuntu/.env -p 5000:5000 ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${IMAGE_TAG}
+          ExecStop=/usr/bin/docker stop crud-api
+
+          [Install]
+          WantedBy=multi-user.target
+          SERVICE'
+
+          sudo systemctl daemon-reload
+          sudo systemctl enable ${{ env.CONTAINER_NAME }}
+          sudo systemctl restart ${{ env.CONTAINER_NAME }}
+
+          sudo bash -c 'cat > /etc/nginx/sites-available/${{ env.CONTAINER_NAME }} <<NGCONF
+          server {
+             listen 80;
+              server_name prasathcrudapi.live;
+
+          location / {
+              proxy_pass http://localhost:5000;
+              proxy_set_header Host $host;
+              proxy_set_header X-Real-IP $remote_addr;
+              proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+              proxy_set_header X-Forwarded-Proto $scheme;
+          }
+          }
+          NGCONF'
+
+          sudo rm -f /etc/nginx/sites-enabled/default || true
+          sudo ln -sf /etc/nginx/sites-available/${{ env.CONTAINER_NAME }} /etc/nginx/sites-enabled/
+          sudo nginx -t && sudo systemctl restart nginx
+
+        # Request Let's Encrypt SSL Certificate
+            sudo certbot --nginx -d prepyapi.adraproductstudio.com --non-interactive --agree-tos -m engineering@adraproductstudio.com
+
+# Auto-renewal (already set by Certbot via cron or systemd)
