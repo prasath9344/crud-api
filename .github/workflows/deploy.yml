@@ -180,13 +180,28 @@ After=network.target docker.service
 Requires=docker.service
 [Service]
 Restart=always
-ExecStartPre=-/usr/bin/docker stop ${{ env.CONTAINER_NAME }}
-ExecStartPre=-/usr/bin/docker rm ${{ env.CONTAINER_NAME }}
-ExecStart=/usr/bin/docker run --name ${{ env.CONTAINER_NAME }} --env-file /home/ubuntu/.env -p 5000:5000 '"$ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG"'
-ExecStop=/usr/bin/docker stop ${{ env.CONTAINER_NAME }}
+ExecStartPre=-/usr/bin/docker stop crud-api
+ExecStartPre=-/usr/bin/docker rm crud-api
+ExecStart=/usr/bin/docker run --name crud-api --env-file /home/ubuntu/.env -p 5000:5000 ECR_URL:TAG
+ExecStop=/usr/bin/docker stop crud-api
 [Install]
 WantedBy=multi-user.target
-EOF'\''
+SERVICE'
+            # Write nginx config
+            sudo bash -c 'cat > /etc/nginx/sites-available/crud-api <<NGCONF
+server {
+    listen 80;
+    server_name prasathcrudapi.live;
+    location / {
+        proxy_pass http://localhost:5000;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+}
+NGCONF'
+EOF
             sudo systemctl daemon-reload
             sudo systemctl enable ${{ env.CONTAINER_NAME }}
             sudo systemctl restart ${{ env.CONTAINER_NAME }}
