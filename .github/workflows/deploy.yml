@@ -174,12 +174,11 @@ jobs:
             set -e
 
             echo "🔧 Removing old Docker versions..."
-            sudo apt-get remove -y docker.io containerd || true
-            sudo apt-get purge -y docker.io containerd || true
+            sudo apt-get remove -y docker.io containerd.io || true
             sudo apt-get autoremove -y
             sudo apt-get clean
             sudo apt-get update -y
-            sudo apt-get install -y nginx jq awscli certbot python3-certbot-nginx
+            sudo apt install -y docker-ce docker-ce-cli containerd.io
 
             echo "🐳 Installing Docker (official script)..."
             curl -fsSL https://get.docker.com -o get-docker.sh
