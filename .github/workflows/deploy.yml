@@ -170,6 +170,9 @@ jobs:
         run: |
           PUBLIC_IP=${{ env.public_ip }}
           ssh -o StrictHostKeyChecking=no -i private_key.pem ubuntu@${PUBLIC_IP} << 'EOF'
+            sudo apt-get update -y
+            sudo apt-get remove -y containerd || true
+            sudo apt-get install -y docker-ce docker-ce-cli containerd.io
             set -e
             sudo apt-get update -y
             sudo apt-get install -y nginx docker.io jq awscli certbot python3-certbot-nginx
