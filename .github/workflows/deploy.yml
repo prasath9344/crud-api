@@ -141,10 +141,9 @@ jobs:
           IP=$(aws ec2 describe-instances --instance-ids ${{ env.instance_id }} --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
           echo "public_ip=$IP" >> $GITHUB_ENV
 
-        run: |
-         set -e
-         aws ec2 associate-address --instance-id i-099e6f3e0fbdfa0ae --allocation-id eipalloc-093a6205a5a73e4d4 || true
-
+          set -e
+          aws ec2 associate-address --instance-id i-099e6f3e0fbdfa0ae --allocation-id eipalloc-093a6205a5a73e4d4 || true
+ 
 
       - name: Login to Amazon ECR
         id: login-ecr
