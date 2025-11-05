@@ -24,7 +24,7 @@ env:
   SECURITY_GROUP_DESCRIPTION: "launch-wizard-1 created via GitHub Actions"
   VPC_ID: vpc-053cc851f75c76519
   ECR_ROLE_NAME: crud-api-dep
-  EIP_ALLOCATION_ID: eipalloc-093a6205a5a73e4d4
+  EIP_ALLOCATION_ID: eipalloc-0660da8d2387010fe
 
 jobs:
   deploy:
