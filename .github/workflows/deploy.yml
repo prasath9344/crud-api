@@ -177,7 +177,8 @@ jobs:
             sudo apt-get remove -y docker.io containerd.io || true
             sudo apt-get autoremove -y
             sudo apt-get clean
-            sudo apt-get update -y
+
+            sudo apt update -y
             sudo apt install -y docker-ce docker-ce-cli containerd.io
 
             echo "🐳 Installing Docker (official script)..."
