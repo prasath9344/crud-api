@@ -170,26 +170,38 @@ jobs:
        
         run: |
           PUBLIC_IP=${{ env.public_ip }}
-            ssh -o StrictHostKeyChecking=no -i private_key.pem ubuntu@${PUBLIC_IP} << 'EOF'
-            sudo apt-get remove -y containerd || true
-            sudo apt-get purge -y containerd || true
+          ssh -o StrictHostKeyChecking=no -i private_key.pem ubuntu@${PUBLIC_IP} << 'EOF'
+            set -e
+
+            echo "🔧 Removing old Docker versions..."
+            sudo apt-get remove -y docker.io containerd || true
+            sudo apt-get purge -y docker.io containerd || true
             sudo apt-get autoremove -y
             sudo apt-get clean
 
+            echo "📦 Installing base dependencies..."
             sudo apt-get update -y
-            sudo apt-get install -y docker-ce docker-ce-cli containerd.io
-            sudo apt-get install -y nginx docker.io jq awscli certbot python3-certbot-nginx
+            sudo apt-get install -y nginx jq awscli certbot python3-certbot-nginx
+
+            echo "🐳 Installing Docker (official script)..."
             curl -fsSL https://get.docker.com -o get-docker.sh
             sudo sh get-docker.sh
             sudo usermod -aG docker ubuntu
             sudo systemctl enable docker --now || true
 
+            echo "🔐 Logging into ECR..."
             sudo aws ecr get-login-password --region '${{ env.AWS_REGION }}' | sudo docker login --username AWS --password-stdin '${{ steps.login-ecr.outputs.registry }}'
+
+            echo "📥 Pulling container image..."
             sudo docker pull '${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}'
+
+            echo "🧾 Writing environment file..."
             echo -e "DB_USER=${{ secrets.DB_USER }}\nDB_HOST=${{ secrets.DB_HOST }}\nDB_NAME=${{ secrets.DB_NAME }}\nDB_PASSWORD=${{ secrets.DB_PASSWORD }}" | sudo tee /home/ubuntu/.env
             sudo chown ubuntu:ubuntu /home/ubuntu/.env
 
-            sudo bash -c 'cat > /etc/systemd/system/${{ env.CONTAINER_NAME }}.service <<SERVICE
+            echo "✅ Deployment preparation complete."
+          EOF
+
 
       - name: Setup and Configure Services
         run: |
